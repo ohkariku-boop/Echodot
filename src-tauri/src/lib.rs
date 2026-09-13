@@ -9,24 +9,21 @@ struct StreamEvent {
     done: bool,
 }
 
-#[tauri::command]
-async fn generate_reply_stream(
-    app: AppHandle,
-    context: String,
-    instruction: String,
-    tone: String,
-    model: String,
-) -> Result<(), String> {
-    let model_name = if model.trim().is_empty() {
-        "llama3.2".to_string()
+fn build_prompt(context: &str, instruction: &str, tone: &str, samples: &str) -> String {
+    let samples_section = if samples.trim().is_empty() {
+        String::new()
     } else {
-        model.trim().to_string()
+        format!(
+            "\n\nHere are examples of how the user typically writes (match this style):\n\"\"\"\n{}\n\"\"\"",
+            samples.trim()
+        )
     };
 
-    let prompt = format!(
-        r#"You are a skilled writing assistant. Your job is to write a reply that sounds natural and matches the requested tone.
+    format!(
+        r#"You are a skilled writing assistant. Write a reply that sounds natural and matches the requested tone.
 
 Tone: {tone}
+{samples_section}
 
 Message the user wants to reply to:
 \"\"\"
@@ -38,15 +35,107 @@ User instruction: {instruction}
 Rules:
 - Write only the reply text
 - Sound human, not robotic
-- Match the requested tone closely
+- Match the requested tone and writing style closely
 - Keep it concise unless the instruction asks otherwise
-- Do not include quotes, explanations, or extra commentary"#,
-        tone = tone,
-        context = context,
-        instruction = instruction
-    );
+- Do not include quotes, explanations, or extra commentary"#
+    )
+}
+
+#[tauri::command]
+async fn generate_reply_stream(
+    app: AppHandle,
+    context: String,
+    instruction: String,
+    tone: String,
+    model: String,
+    provider: String,          // "ollama" | "openrouter"
+    api_key: String,           // only needed for openrouter
+    samples: String,           // optional writing samples
+) -> Result<(), String> {
+    let model_name = if model.trim().is_empty() {
+        if provider == "openrouter" {
+            "openrouter/free".to_string()
+        } else {
+            "llama3.2".to_string()
+        }
+    } else {
+        model.trim().to_string()
+    };
+
+    let prompt = build_prompt(&context, &instruction, &tone, &samples);
 
     let client = reqwest::Client::new();
+
+    if provider == "openrouter" {
+        // OpenAI-compatible chat completions (streaming)
+        if api_key.trim().is_empty() {
+            return Err("OpenRouter API key is required. Add it in Settings.".to_string());
+        }
+
+        let res = client
+            .post("https://openrouter.ai/api/v1/chat/completions")
+            .header("Authorization", format!("Bearer {}", api_key.trim()))
+            .header("HTTP-Referer", "https://github.com/ohkariku-boop/Echodot")
+            .header("X-Title", "echodot")
+            .json(&serde_json::json!({
+                "model": model_name,
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ],
+                "stream": true,
+                "temperature": 0.7,
+                "max_tokens": 512
+            }))
+            .send()
+            .await
+            .map_err(|e| format!("Failed to reach OpenRouter: {}", e))?;
+
+        if !res.status().is_success() {
+            let status = res.status();
+            let body = res.text().await.unwrap_or_default();
+            return Err(format!("OpenRouter error {}: {}", status, body));
+        }
+
+        let mut stream = res.bytes_stream();
+        let mut buffer = String::new();
+
+        while let Some(item) = stream.next().await {
+            let chunk = item.map_err(|e| e.to_string())?;
+            buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+            while let Some(pos) = buffer.find('\n') {
+                let line = buffer[..pos].trim().to_string();
+                buffer = buffer[pos + 1..].to_string();
+
+                if line.is_empty() || line == "data: [DONE]" {
+                    if line == "data: [DONE]" {
+                        let _ = app.emit("reply-stream", StreamEvent { token: String::new(), done: true });
+                        return Ok(());
+                    }
+                    continue;
+                }
+
+                let json_str = line.strip_prefix("data: ").unwrap_or(&line);
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(json_str) {
+                    if let Some(content) = json["choices"][0]["delta"]["content"].as_str() {
+                        let _ = app.emit("reply-stream", StreamEvent {
+                            token: content.to_string(),
+                            done: false,
+                        });
+                    }
+                    if json["choices"][0]["finish_reason"].is_string() {
+                        let _ = app.emit("reply-stream", StreamEvent { token: String::new(), done: true });
+                        return Ok(());
+                    }
+                }
+            }
+        }
+
+        let _ = app.emit("reply-stream", StreamEvent { token: String::new(), done: true });
+        return Ok(());
+    }
+
+    // ---- Ollama path (default) ----
     let res = client
         .post("http://localhost:11434/api/generate")
         .json(&serde_json::json!({
@@ -91,13 +180,10 @@ Rules:
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
                 if let Some(token) = json["response"].as_str() {
                     let done = json["done"].as_bool().unwrap_or(false);
-                    let _ = app.emit(
-                        "reply-stream",
-                        StreamEvent {
-                            token: token.to_string(),
-                            done,
-                        },
-                    );
+                    let _ = app.emit("reply-stream", StreamEvent {
+                        token: token.to_string(),
+                        done,
+                    });
                     if done {
                         return Ok(());
                     }
@@ -106,14 +192,7 @@ Rules:
         }
     }
 
-    let _ = app.emit(
-        "reply-stream",
-        StreamEvent {
-            token: String::new(),
-            done: true,
-        },
-    );
-
+    let _ = app.emit("reply-stream", StreamEvent { token: String::new(), done: true });
     Ok(())
 }
 
@@ -184,7 +263,6 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Hide instead of close — keeps the app running in background
             if let WindowEvent::CloseRequested { api, .. } = event {
                 let _ = window.hide();
                 api.prevent_close();

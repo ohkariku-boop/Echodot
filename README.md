@@ -38,18 +38,18 @@ echodot lives on your machine, works in any application, and learns how *you* ac
 - [x] **Hide-on-close** (window hides, app keeps running)
 - [x] **Auto-copy on finish** (ready to paste immediately)
 - [x] Manual Hide button
+- [x] **OpenRouter cloud support** (safe model list)
+- [x] **Writing samples** for personalization
+- [x] Provider switcher (Ollama ↔ OpenRouter)
 - [ ] Full system tray icon (requires app icons)
 - [ ] Better context capture (accessibility APIs)
 - [ ] True auto-paste into original app
-- [ ] Writing samples / deeper personalization
 
 ### Later
 - Voice input
 - Per-app tone rules
 - Skills / custom instructions
 - Better long-term memory
-- System tray + hide-on-close
-- Auto-paste / insert
 - Team / enterprise features (optional)
 
 ---

@@ -12,12 +12,26 @@ const TONE_PRESETS = [
   "formal",
 ];
 
+// Safe, commonly available OpenRouter models (avoid dead / experimental IDs)
+const OPENROUTER_MODELS = [
+  { id: "openrouter/free", label: "Free Models Router (recommended)" },
+  { id: "meta-llama/llama-3.3-8b-instruct:free", label: "Llama 3.3 8B (free)" },
+  { id: "google/gemini-2.0-flash-001", label: "Gemini 2.0 Flash" },
+  { id: "openai/gpt-4o-mini", label: "GPT-4o Mini" },
+  { id: "anthropic/claude-3.5-sonnet", label: "Claude 3.5 Sonnet" },
+  { id: "google/gemini-flash-1.5", label: "Gemini 1.5 Flash" },
+];
+
 function App() {
   const [context, setContext] = useState("");
   const [instruction, setInstruction] = useState("Reply naturally");
   const [tone, setTone] = useState("casual and friendly");
+  const [provider, setProvider] = useState<"ollama" | "openrouter">("ollama");
   const [model, setModel] = useState("llama3.2");
   const [models, setModels] = useState<string[]>([]);
+  const [apiKey, setApiKey] = useState("");
+  const [samples, setSamples] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
   const [result, setResult] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -33,34 +47,38 @@ function App() {
         if (s.tone) setTone(s.tone);
         if (s.instruction) setInstruction(s.instruction);
         if (s.model) setModel(s.model);
+        if (s.provider) setProvider(s.provider);
+        if (s.apiKey) setApiKey(s.apiKey);
+        if (s.samples) setSamples(s.samples);
       } catch {}
     }
   }, []);
 
-  // Persist settings
+  // Persist settings (key stored only locally on device)
   useEffect(() => {
     localStorage.setItem(
       "echodot-settings",
-      JSON.stringify({ tone, instruction, model })
+      JSON.stringify({ tone, instruction, model, provider, apiKey, samples })
     );
-  }, [tone, instruction, model]);
+  }, [tone, instruction, model, provider, apiKey, samples]);
 
   // Load Ollama models
   useEffect(() => {
+    if (provider !== "ollama") return;
     invoke<string[]>("list_ollama_models")
       .then((list) => {
         if (list.length > 0) {
           setModels(list);
           setModel((prev) => {
             if (list.includes(prev)) return prev;
-            return list.find((m) => m.includes("llama3.2")) || list[0];
+            return list.find((m) => m.includes("llama3.2") || m.includes("llama3")) || list[0];
           });
         }
       })
       .catch(() => {});
-  }, []);
+  }, [provider]);
 
-  // Streaming listener + auto-copy when finished
+  // Streaming + auto-copy
   useEffect(() => {
     let unlisten: (() => void) | undefined;
 
@@ -72,13 +90,10 @@ function App() {
       }
       if (done) {
         setLoading(false);
-        // Auto-copy the final result so user can immediately paste
         if (resultRef.current.trim()) {
-          writeText(resultRef.current).then(() => {
-            setStatus("Done • Copied to clipboard — just paste (⌘V / Ctrl+V)");
-          }).catch(() => {
-            setStatus("Done");
-          });
+          writeText(resultRef.current)
+            .then(() => setStatus("Done • Copied — paste with ⌘V / Ctrl+V"))
+            .catch(() => setStatus("Done"));
         } else {
           setStatus("Done");
         }
@@ -112,6 +127,11 @@ function App() {
       setError("Add some context first (the message you're replying to)");
       return;
     }
+    if (provider === "openrouter" && !apiKey.trim()) {
+      setError("OpenRouter API key required. Open Settings and paste your key.");
+      setShowSettings(true);
+      return;
+    }
 
     setLoading(true);
     setError("");
@@ -124,7 +144,10 @@ function App() {
         context: context.trim(),
         instruction: instruction.trim() || "Reply naturally",
         tone: tone.trim() || "casual and friendly",
-        model: model.trim() || "llama3.2",
+        model: model.trim(),
+        provider,
+        apiKey: apiKey.trim(),
+        samples: samples.trim(),
       });
     } catch (e: any) {
       const msg = typeof e === "string" ? e : "Generation failed";
@@ -147,9 +170,7 @@ function App() {
   async function hideApp() {
     try {
       await invoke("hide_window");
-    } catch {
-      // fallback: just ignore
-    }
+    } catch {}
   }
 
   return (
@@ -160,18 +181,89 @@ function App() {
             <h1 className="text-2xl font-bold tracking-tight">echodot</h1>
             <p className="text-zinc-500 text-sm">Echo your voice across every app</p>
           </div>
-          <button
-            onClick={hideApp}
-            title="Hide window (app keeps running)"
-            className="text-zinc-500 hover:text-zinc-300 text-xs px-2 py-1 rounded border border-zinc-800 hover:border-zinc-600 transition"
-          >
-            Hide
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowSettings(!showSettings)}
+              className="text-zinc-500 hover:text-zinc-300 text-xs px-2 py-1 rounded border border-zinc-800 hover:border-zinc-600 transition"
+            >
+              {showSettings ? "Close" : "Settings"}
+            </button>
+            <button
+              onClick={hideApp}
+              className="text-zinc-500 hover:text-zinc-300 text-xs px-2 py-1 rounded border border-zinc-800 hover:border-zinc-600 transition"
+            >
+              Hide
+            </button>
+          </div>
         </div>
 
         <div className="text-xs text-center text-zinc-500 bg-zinc-900/60 rounded-lg py-2 px-3">
           {status}
         </div>
+
+        {showSettings && (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-zinc-300">Provider</label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setProvider("ollama");
+                    setModel("llama3.2");
+                  }}
+                  className={`flex-1 text-sm py-2 rounded-lg border transition ${
+                    provider === "ollama"
+                      ? "bg-zinc-100 text-zinc-900 border-zinc-100"
+                      : "border-zinc-700 text-zinc-400"
+                  }`}
+                >
+                  Ollama (local)
+                </button>
+                <button
+                  onClick={() => {
+                    setProvider("openrouter");
+                    setModel("openrouter/free");
+                  }}
+                  className={`flex-1 text-sm py-2 rounded-lg border transition ${
+                    provider === "openrouter"
+                      ? "bg-zinc-100 text-zinc-900 border-zinc-100"
+                      : "border-zinc-700 text-zinc-400"
+                  }`}
+                >
+                  OpenRouter (cloud)
+                </button>
+              </div>
+            </div>
+
+            {provider === "openrouter" && (
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-zinc-300">OpenRouter API Key</label>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="sk-or-v1-..."
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-zinc-600"
+                />
+                <p className="text-xs text-zinc-500">
+                  Stored only on this device. Get a key at openrouter.ai/keys
+                </p>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-zinc-300">
+                Writing samples (optional)
+              </label>
+              <textarea
+                value={samples}
+                onChange={(e) => setSamples(e.target.value)}
+                placeholder="Paste 2–4 short examples of how you normally write. The model will match your style."
+                className="w-full h-24 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-zinc-600 placeholder:text-zinc-600"
+              />
+            </div>
+          </div>
+        )}
 
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
@@ -207,7 +299,6 @@ function App() {
               value={tone}
               onChange={(e) => setTone(e.target.value)}
               list="tone-presets"
-              placeholder="casual and friendly"
               className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-zinc-600"
             />
             <datalist id="tone-presets">
@@ -218,7 +309,6 @@ function App() {
           </div>
         </div>
 
-        {/* Tone preset chips */}
         <div className="flex flex-wrap gap-1.5">
           {TONE_PRESETS.map((t) => (
             <button
@@ -236,26 +326,42 @@ function App() {
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-zinc-300">Model</label>
-          {models.length > 0 ? (
+          <label className="text-sm font-medium text-zinc-300">
+            Model {provider === "openrouter" && <span className="text-zinc-500">(OpenRouter)</span>}
+          </label>
+          {provider === "ollama" ? (
+            models.length > 0 ? (
+              <select
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-zinc-600"
+              >
+                {models.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="llama3.2"
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-zinc-600"
+              />
+            )
+          ) : (
             <select
               value={model}
               onChange={(e) => setModel(e.target.value)}
               className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-zinc-600"
             >
-              {models.map((m) => (
-                <option key={m} value={m}>
-                  {m}
+              {OPENROUTER_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
                 </option>
               ))}
             </select>
-          ) : (
-            <input
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder="llama3.2"
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-zinc-600"
-            />
           )}
         </div>
 
@@ -284,7 +390,7 @@ function App() {
                   onClick={copyResult}
                   className="text-xs text-blue-400 hover:text-blue-300 transition"
                 >
-                  Copy to clipboard
+                  Copy again
                 </button>
               )}
             </div>
@@ -298,7 +404,7 @@ function App() {
         )}
 
         <p className="text-center text-xs text-zinc-600 pt-1">
-          Local-first • Powered by Ollama • Settings auto-saved
+          {provider === "ollama" ? "Local-first • Ollama" : "Cloud • OpenRouter"} • Settings auto-saved
         </p>
       </div>
     </div>
