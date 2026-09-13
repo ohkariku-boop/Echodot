@@ -29,11 +29,13 @@ echodot lives on your machine, works in any application, and learns how *you* ac
 - [x] Clipboard read / write
 - [x] Local model support (Ollama)
 - [x] Basic generate reply flow
+- [x] Model selector (auto-detects installed Ollama models)
+- [x] Improved prompt engineering
 - [ ] Better context capture (active window / selection)
 - [ ] Tone profile + writing samples
 - [ ] Streaming generation
 - [ ] Auto-paste / insert
-- [ ] Simple settings UI
+- [ ] Simple settings UI (persistent)
 
 ### Later
 - Voice input

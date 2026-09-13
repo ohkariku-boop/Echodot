@@ -1,58 +1,105 @@
-use tauri::{
-    menu::{Menu, MenuItem},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager, Runtime,
-};
+use tauri::{Manager};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 #[tauri::command]
-async fn generate_reply(context: String, instruction: String, tone: String) -> Result<String, String> {
-    // Simple Ollama call (default local)
+async fn generate_reply(
+    context: String,
+    instruction: String,
+    tone: String,
+    model: String,
+) -> Result<String, String> {
+    let model_name = if model.trim().is_empty() {
+        "llama3.2".to_string()
+    } else {
+        model.trim().to_string()
+    };
+
     let prompt = format!(
-        r#"You are a helpful writing assistant that rewrites text in the user's personal style.
+        r#"You are a skilled writing assistant. Your job is to write a reply that sounds natural and matches the requested tone.
 
-User's preferred tone: {}
+Tone: {tone}
 
-Context (the message they are replying to):
----
-{}
----
+Message the user wants to reply to:
+\"\"\"
+{context}
+\"\"\"
 
-Instruction from user: {}
+User instruction: {instruction}
 
-Write a natural reply that matches the requested tone. Keep it concise and human. Output only the reply text, nothing else."#,
-        tone, context, instruction
+Rules:
+- Write only the reply text
+- Sound human, not robotic
+- Match the requested tone closely
+- Keep it concise unless the instruction asks otherwise
+- Do not include quotes, explanations, or extra commentary"#,
+        tone = tone,
+        context = context,
+        instruction = instruction
     );
 
     let client = reqwest::Client::new();
     let res = client
         .post("http://localhost:11434/api/generate")
         .json(&serde_json::json!({
-            "model": "llama3.2",          // change to whatever model the user has
+            "model": model_name,
             "prompt": prompt,
-            "stream": false
+            "stream": false,
+            "options": {
+                "temperature": 0.7,
+                "num_predict": 512
+            }
         }))
         .send()
         .await
-        .map_err(|e| format!("Failed to reach Ollama: {}. Is Ollama running?", e))?;
+        .map_err(|e| {
+            format!(
+                "Failed to reach Ollama at http://localhost:11434. Is Ollama running?\n\nError: {}",
+                e
+            )
+        })?;
 
     if !res.status().is_success() {
-        return Err(format!("Ollama error: {}", res.status()));
+        let status = res.status();
+        let body = res.text().await.unwrap_or_default();
+        return Err(format!("Ollama returned {}: {}", status, body));
     }
 
     let body: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
     let reply = body["response"]
         .as_str()
         .unwrap_or("No response from model")
+        .trim()
         .to_string();
 
-    Ok(reply.trim().to_string())
+    if reply.is_empty() {
+        return Err("Model returned an empty response".to_string());
+    }
+
+    Ok(reply)
 }
 
 #[tauri::command]
-fn get_clipboard() -> Result<String, String> {
-    // Placeholder - real implementation uses the clipboard plugin from frontend
-    Ok("".to_string())
+async fn list_ollama_models() -> Result<Vec<String>, String> {
+    let client = reqwest::Client::new();
+    let res = client
+        .get("http://localhost:11434/api/tags")
+        .send()
+        .await
+        .map_err(|e| format!("Cannot reach Ollama: {}", e))?;
+
+    if !res.status().is_success() {
+        return Err("Failed to list models".to_string());
+    }
+
+    let body: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+    let models = body["models"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter_map(|m| m["name"].as_str().map(|s| s.to_string()))
+        .collect();
+
+    Ok(models)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -62,20 +109,19 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, shortcut, event| {
+                .with_handler(|app, _shortcut, event| {
                     if event.state == ShortcutState::Pressed {
-                        // For now just show the main window when hotkey is pressed
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
                             let _ = window.set_focus();
+                            let _ = window.unminimize();
                         }
                     }
                 })
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![generate_reply, get_clipboard])
+        .invoke_handler(tauri::generate_handler![generate_reply, list_ollama_models])
         .setup(|app| {
-            // Register a default global shortcut: Cmd/Ctrl + Shift + E
             #[cfg(desktop)]
             {
                 let shortcut = if cfg!(target_os = "macos") {
@@ -83,7 +129,6 @@ pub fn run() {
                 } else {
                     Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyE)
                 };
-
                 app.global_shortcut().register(shortcut)?;
             }
             Ok(())
