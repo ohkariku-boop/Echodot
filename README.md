@@ -35,9 +35,12 @@ echodot lives on your machine, works in any application, and learns how *you* ac
 - [x] **Persistent settings** (tone, instruction, model remembered)
 - [x] **Tone presets** (quick chips + custom)
 - [x] Mobile strategy documented (Android + iOS)
-- [ ] Better context capture (active window / selection)
-- [ ] Auto-paste / insert
-- [ ] System tray + hide-on-close
+- [x] **Hide-on-close** (window hides, app keeps running)
+- [x] **Auto-copy on finish** (ready to paste immediately)
+- [x] Manual Hide button
+- [ ] Full system tray icon (requires app icons)
+- [ ] Better context capture (accessibility APIs)
+- [ ] True auto-paste into original app
 - [ ] Writing samples / deeper personalization
 
 ### Later
@@ -102,7 +105,12 @@ npm run tauri dev
 The app will open.  
 Default global hotkey: **⌘⇧E** (macOS) or **Ctrl+Shift+E** (Windows/Linux).
 
-> Note: You still need to generate icons (`npm run tauri icon your-icon.png`) before building a release.
+**New behavior:**
+- Closing the window **hides** it instead of quitting (app stays in background).
+- After generation finishes, the reply is **automatically copied** — just paste with ⌘V / Ctrl+V.
+- Use the **Hide** button or close the window to get it out of the way.
+
+> Note: Generate icons with `npm run tauri icon your-icon.png` before building a release (also needed for full system tray).
 
 ---
 

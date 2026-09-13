@@ -60,7 +60,7 @@ function App() {
       .catch(() => {});
   }, []);
 
-  // Streaming listener
+  // Streaming listener + auto-copy when finished
   useEffect(() => {
     let unlisten: (() => void) | undefined;
 
@@ -72,7 +72,16 @@ function App() {
       }
       if (done) {
         setLoading(false);
-        setStatus("Done");
+        // Auto-copy the final result so user can immediately paste
+        if (resultRef.current.trim()) {
+          writeText(resultRef.current).then(() => {
+            setStatus("Done • Copied to clipboard — just paste (⌘V / Ctrl+V)");
+          }).catch(() => {
+            setStatus("Done");
+          });
+        } else {
+          setStatus("Done");
+        }
       }
     }).then((fn) => {
       unlisten = fn;
@@ -129,18 +138,35 @@ function App() {
     if (!result) return;
     try {
       await writeText(result);
-      setStatus("Copied to clipboard ✓");
+      setStatus("Copied to clipboard ✓ — paste with ⌘V / Ctrl+V");
     } catch {
       setError("Failed to copy");
+    }
+  }
+
+  async function hideApp() {
+    try {
+      await invoke("hide_window");
+    } catch {
+      // fallback: just ignore
     }
   }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 p-5">
       <div className="max-w-lg mx-auto space-y-4">
-        <div className="text-center space-y-1 pt-1">
-          <h1 className="text-2xl font-bold tracking-tight">echodot</h1>
-          <p className="text-zinc-500 text-sm">Echo your voice across every app</p>
+        <div className="flex items-start justify-between pt-1">
+          <div className="text-center flex-1 space-y-1">
+            <h1 className="text-2xl font-bold tracking-tight">echodot</h1>
+            <p className="text-zinc-500 text-sm">Echo your voice across every app</p>
+          </div>
+          <button
+            onClick={hideApp}
+            title="Hide window (app keeps running)"
+            className="text-zinc-500 hover:text-zinc-300 text-xs px-2 py-1 rounded border border-zinc-800 hover:border-zinc-600 transition"
+          >
+            Hide
+          </button>
         </div>
 
         <div className="text-xs text-center text-zinc-500 bg-zinc-900/60 rounded-lg py-2 px-3">

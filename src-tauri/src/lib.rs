@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use futures_util::StreamExt;
 use serde::Serialize;
@@ -141,6 +141,13 @@ async fn list_ollama_models() -> Result<Vec<String>, String> {
     Ok(models)
 }
 
+#[tauri::command]
+fn hide_window(app: AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -161,7 +168,8 @@ pub fn run() {
         )
         .invoke_handler(tauri::generate_handler![
             generate_reply_stream,
-            list_ollama_models
+            list_ollama_models,
+            hide_window
         ])
         .setup(|app| {
             #[cfg(desktop)]
@@ -174,6 +182,13 @@ pub fn run() {
                 app.global_shortcut().register(shortcut)?;
             }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Hide instead of close — keeps the app running in background
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                let _ = window.hide();
+                api.prevent_close();
+            }
         })
         .run(tauri::generate_context!())
         .expect("error while running echodot");
