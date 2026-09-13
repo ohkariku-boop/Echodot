@@ -93,7 +93,7 @@ Full desktop-style global hotkeys + screen context are limited on mobile. We wil
 **Prerequisites**
 - Node.js 20+
 - Rust
-- Ollama (with a model, e.g. `ollama pull llama3.2`)
+- Ollama (recommended for local use) — e.g. `ollama pull llama3.2`
 
 ```bash
 git clone https://github.com/ohkariku-boop/Echodot.git
@@ -102,15 +102,25 @@ npm install
 npm run tauri dev
 ```
 
-The app will open.  
 Default global hotkey: **⌘⇧E** (macOS) or **Ctrl+Shift+E** (Windows/Linux).
 
-**New behavior:**
-- Closing the window **hides** it instead of quitting (app stays in background).
-- After generation finishes, the reply is **automatically copied** — just paste with ⌘V / Ctrl+V.
-- Use the **Hide** button or close the window to get it out of the way.
+**Behavior notes:**
+- Closing the window **hides** it (app keeps running in the background).
+- When generation finishes the reply is **auto-copied** — just paste with ⌘V / Ctrl+V.
+- Use the **Hide** button to dismiss the window quickly.
 
-> Note: Generate icons with `npm run tauri icon your-icon.png` before building a release (also needed for full system tray).
+### Using OpenRouter (cloud models)
+
+1. Get your own free API key at [openrouter.ai/keys](https://openrouter.ai/keys)
+2. Open echodot → click **Settings**
+3. Switch provider to **OpenRouter (cloud)**
+4. Paste **your own** key
+5. Choose a model (the Free Models Router is a good default)
+
+**Important:** Every user must use their own OpenRouter key.  
+No API keys are shipped with the app. Keys are stored only locally on the user’s device.
+
+> Generate icons with `npm run tauri icon your-icon.png` before building a release (required for system tray support).
 
 ---
 

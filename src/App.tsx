@@ -246,7 +246,8 @@ function App() {
                   className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-zinc-600"
                 />
                 <p className="text-xs text-zinc-500">
-                  Stored only on this device. Get a key at openrouter.ai/keys
+                  Your personal key — stored only on this device.  
+                  Get one free at openrouter.ai/keys
                 </p>
               </div>
             )}
