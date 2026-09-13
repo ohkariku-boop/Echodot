@@ -1,13 +1,22 @@
-use tauri::{Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use futures_util::StreamExt;
+use serde::Serialize;
+
+#[derive(Clone, Serialize)]
+struct StreamEvent {
+    token: String,
+    done: bool,
+}
 
 #[tauri::command]
-async fn generate_reply(
+async fn generate_reply_stream(
+    app: AppHandle,
     context: String,
     instruction: String,
     tone: String,
     model: String,
-) -> Result<String, String> {
+) -> Result<(), String> {
     let model_name = if model.trim().is_empty() {
         "llama3.2".to_string()
     } else {
@@ -43,7 +52,7 @@ Rules:
         .json(&serde_json::json!({
             "model": model_name,
             "prompt": prompt,
-            "stream": false,
+            "stream": true,
             "options": {
                 "temperature": 0.7,
                 "num_predict": 512
@@ -64,18 +73,48 @@ Rules:
         return Err(format!("Ollama returned {}: {}", status, body));
     }
 
-    let body: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
-    let reply = body["response"]
-        .as_str()
-        .unwrap_or("No response from model")
-        .trim()
-        .to_string();
+    let mut stream = res.bytes_stream();
+    let mut buffer = String::new();
 
-    if reply.is_empty() {
-        return Err("Model returned an empty response".to_string());
+    while let Some(item) = stream.next().await {
+        let chunk = item.map_err(|e| e.to_string())?;
+        buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+        while let Some(pos) = buffer.find('\n') {
+            let line = buffer[..pos].trim().to_string();
+            buffer = buffer[pos + 1..].to_string();
+
+            if line.is_empty() {
+                continue;
+            }
+
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+                if let Some(token) = json["response"].as_str() {
+                    let done = json["done"].as_bool().unwrap_or(false);
+                    let _ = app.emit(
+                        "reply-stream",
+                        StreamEvent {
+                            token: token.to_string(),
+                            done,
+                        },
+                    );
+                    if done {
+                        return Ok(());
+                    }
+                }
+            }
+        }
     }
 
-    Ok(reply)
+    let _ = app.emit(
+        "reply-stream",
+        StreamEvent {
+            token: String::new(),
+            done: true,
+        },
+    );
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -120,7 +159,10 @@ pub fn run() {
                 })
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![generate_reply, list_ollama_models])
+        .invoke_handler(tauri::generate_handler![
+            generate_reply_stream,
+            list_ollama_models
+        ])
         .setup(|app| {
             #[cfg(desktop)]
             {
