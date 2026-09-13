@@ -25,11 +25,14 @@ echodot lives on your machine, works in any application, and learns how *you* ac
 ## Features (Roadmap)
 
 ### v0.1 – Core (in progress)
-- [ ] Global hotkey
-- [ ] Context capture (selected text / clipboard / active window)
+- [x] Global hotkey (⌘⇧E / Ctrl+Shift+E)
+- [x] Clipboard read / write
+- [x] Local model support (Ollama)
+- [x] Basic generate reply flow
+- [ ] Better context capture (active window / selection)
 - [ ] Tone profile + writing samples
-- [ ] Local model support (Ollama)
-- [ ] Streaming generation + insert/paste
+- [ ] Streaming generation
+- [ ] Auto-paste / insert
 - [ ] Simple settings UI
 
 ### Later
@@ -53,19 +56,22 @@ echodot lives on your machine, works in any application, and learns how *you* ac
 
 ## Getting Started (Development)
 
-> Full setup instructions coming soon.
+**Prerequisites**
+- Node.js 20+
+- Rust
+- Ollama (with a model, e.g. `ollama pull llama3.2`)
 
 ```bash
-# Prerequisites
-# - Node.js 20+
-# - Rust
-# - Ollama (recommended)
-
 git clone https://github.com/ohkariku-boop/Echodot.git
 cd Echodot
 npm install
 npm run tauri dev
 ```
+
+The app will open.  
+Default global hotkey: **⌘⇧E** (macOS) or **Ctrl+Shift+E** (Windows/Linux).
+
+> Note: You still need to generate icons (`npm run tauri icon your-icon.png`) before building a release.
 
 ---
 
